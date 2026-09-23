@@ -2,9 +2,9 @@ name: Hourly Salesforce Job Alert
 
 on:
   schedule:
-    # Every hour, 24x7 (free & unlimited on a PUBLIC repo).
-    # Private repo? Use "17 3-17 * * *" (8:47 AM to 10:47 PM IST) to stay inside 2,000 free min/month.
-    - cron: "17 * * * *"
+    # Every 30 minutes, 24x7 (at :17 and :47 past each hour; free & unlimited on a PUBLIC repo).
+    # Do NOT use this on a private repo (it would need ~8,600 min/month; free limit is 2,000).
+    - cron: "17,47 * * * *"
   workflow_dispatch: {}          # "Run workflow" button for manual tests
 
 # never let two runs overlap (prevents double emails to recruiters)
@@ -61,8 +61,8 @@ jobs:
           QUIET_LOGS: "true"                        # don't print company/recruiter names in public logs
           MIN_EXP: "4"
           MAX_EXP: "8"
-          WINDOW_HOURS: "1"            # only jobs posted in the last 1 hour
-          MAX_WINDOW_HOURS: "1.25"     # small stretch only when GitHub starts a run late (no gaps, no old jobs)
+          WINDOW_HOURS: "0.5"          # only jobs posted in the last 30 minutes
+          MAX_WINDOW_HOURS: "0.75"     # small stretch only when GitHub starts a run late (no gaps, no old jobs)
           SEND_IF_EMPTY: "false"       # no email when nothing was posted in the last hour
           USE_LINKEDIN: "true"
           USE_NAUKRI: "true"
