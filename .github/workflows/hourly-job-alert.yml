@@ -1,23 +1,87 @@
+name: Hourly Salesforce Job Alert
 
 on:
   schedule:
-    # Every 30 minutes, 24x7 (at :17 and :47 past each hour; free & unlimited on a PUBLIC repo).
-    # Do NOT use this on a private repo (it would need ~8,600 min/month; free limit is 2,000).
-    - cron: "17,47 * * * *"
-  workflow_dispatch: {}          # "Run workflow" button; also used by the self-restart below
+    # Cron times are UTC (IST = UTC + 5:30).
+    # 02:30 UTC = 8:00 AM IST → starts the day's 30-minute chain.
+    - cron: "30 2 * * *"
+    # BACKUP every 30 min from 8:30 AM to 11:00 PM IST: restarts the chain if it ever stops
+    # (skips itself while the chain is running). Nothing runs overnight.
+    - cron: "0,30 3-17 * * *"
+  workflow_dispatch:             # "Run workflow" button; also used by the self-restart below
+    inputs:
+      chained:
+        description: "Started automatically by the previous run (leave false)"
+        required: false
+        default: "false"
+
+# ── ACTIVE HOURS (IST) ── change these two numbers to change the daily window.
+# If you change them, also change the two cron lines above (UTC = IST - 5:30).
+env:
+  START_HOUR_IST: "8"      # first run  8:00 AM IST
+  END_HOUR_IST: "23"       # last run starts before 11:00 PM IST
 
 # Allows the workflow to start its own next run (self-restart every 30 min)
 permissions:
   contents: read
   actions: write
 
-# never let two runs overlap (prevents double emails to recruiters)
-concurrency:
-  group: hourly-job-alert
-  cancel-in-progress: false
-
 jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # GUARD: keeps exactly ONE 30-minute chain alive.
+  #  • Manual "Run workflow" click → always runs.
+  #  • Chained run (started by the previous run) → stops if a newer chain already ran < 15 min ago
+  #    (this kills duplicate chains, which caused the "next run after 6 minutes" problem).
+  #  • Backup cron → runs ONLY if the chain has died (no run in the last 35 min).
+  #  • Outside active hours (default 8 AM–11 PM IST) → scheduled/chained runs cancel themselves.
+  # Skipped runs cancel themselves, so they show as grey "cancelled". That's normal.
+  # ─────────────────────────────────────────────────────────────────────────────
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          CHAINED: ${{ inputs.chained }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ] && [ "$CHAINED" != "true" ]; then
+            echo "Manual run: go."; echo "go=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          now=$(( 10#$(TZ=Asia/Kolkata date +%H) * 60 + 10#$(TZ=Asia/Kolkata date +%M) ))
+          if [ $now -lt $(( START_HOUR_IST * 60 )) ] || [ $now -gt $(( END_HOUR_IST * 60 + 10 )) ]; then
+            echo "Outside active hours ($START_HOUR_IST:00 to $END_HOUR_IST:00 IST): not running, cancelling."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            gh run cancel ${{ github.run_id }}
+            sleep 60; exit 0
+          fi
+          if [ "$EVENT" = "schedule" ]; then mins=35; else mins=15; fi
+          me=$(gh run view ${{ github.run_id }} --json createdAt --jq .createdAt)
+          cutoff=$(date -u -d "$me - $mins minutes" +%Y-%m-%dT%H:%M:%SZ)
+          # chained runs only give way to other chained/manual runs (never to a backup run)
+          if [ "$EVENT" = "schedule" ]; then ev='.'; else ev='select(.event != \"schedule\")'; fi
+          recent=$(gh run list --workflow hourly-job-alert.yml --limit 30 --json databaseId,conclusion,createdAt,event \
+            --jq "[.[] | select(.databaseId != ${{ github.run_id }}) | $ev | select(.conclusion != \"cancelled\" and .conclusion != \"skipped\") | select(.createdAt > \"$cutoff\" and .createdAt < \"$me\")] | length")
+          if [ "$recent" -gt 0 ]; then
+            echo "Another run started in the $mins min before this one: this one is not needed, cancelling."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            gh run cancel ${{ github.run_id }}
+            sleep 60
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
   alert:
+    needs: guard
+    if: needs.guard.outputs.go == 'true'
+    # never let two job searches overlap (prevents double emails to recruiters)
+    concurrency:
+      group: hourly-job-alert
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -65,12 +129,13 @@ jobs:
           QUIET_LOGS: "true"                        # don't print company/recruiter names in public logs
           MIN_EXP: "4"
           MAX_EXP: "8"
-          WINDOW_HOURS: "0.5"          # only jobs posted in the last 30 minutes
-          MAX_WINDOW_HOURS: "0.75"     # small stretch only when GitHub starts a run late (no gaps, no old jobs)
-          SEND_IF_EMPTY: "false"       # no email when nothing was posted in the last hour
+          WINDOW_HOURS: "0.5"          # jobs posted since the previous run (about 30 minutes)
+          # Normally each run looks back ~30 min (to the previous run). The first run of the morning
+          # looks back to last night's final run, so jobs posted overnight are NOT missed.
+          MAX_WINDOW_HOURS: "10"
+          SEND_IF_EMPTY: "false"       # no email when nothing new was posted
           USE_LINKEDIN: "true"
           USE_NAUKRI: "true"
-          # extra portals (remove any you don't want)
           # all extra portals (TimesJobs & Instahyre: a job is "new" the first hour it appears)
           OTHER_SOURCES: "Foundit,Shine,Cutshort,Talent.com,TimesJobs,Instahyre"
           # ---- auto-apply by emailing recruiters ----
@@ -91,39 +156,40 @@ jobs:
           key: job-state-${{ github.run_id }}
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # SELF-RESTART: GitHub's own cron is often late or skipped (especially on new repos).
-  # After each run, wait until the next :17 / :47 slot, then start the next run.
-  # Just click "Run workflow" ONCE and it keeps going by itself, forever (free on a public repo).
-  # The cron schedule above stays as a backup that restarts the chain if it ever breaks.
+  # SELF-RESTART: starts the next run exactly 30 minutes after this run started,
+  # until 11 PM IST. Then it stops for the night; the 8 AM cron starts it again next morning.
+  # The cron schedule above is only a backup that restarts the chain if it ever breaks.
   # ─────────────────────────────────────────────────────────────────────────────
   next-run:
-    needs: alert
-    if: always()
+    needs: [guard, alert]
+    if: always() && needs.guard.outputs.go == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 40
     steps:
-      - name: Wait for the next 30-minute slot
+      - name: Wait until 30 minutes after this run started
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          INTERVAL_MIN: "30"
         run: |
-          now=$(date +%s)
-          m=$(date +%-M); s=$(date +%-S)
-          # seconds until the next :17 or :47
-          for slot in 17 47 77; do
-            wait=$(( (slot - m) * 60 - s ))
-            [ $wait -ge 300 ] && break      # at least 5 min away
-          done
-          echo "Sleeping $((wait / 60)) min until the next slot"
+          started=$(gh run view ${{ github.run_id }} --json createdAt --jq .createdAt)
+          target=$(( $(date -d "$started" +%s) + INTERVAL_MIN * 60 ))
+          wait=$(( target - $(date +%s) ))
+          [ $wait -lt 60 ] && wait=60
+          nxt=$(( 10#$(TZ=Asia/Kolkata date -d "@$target" +%H) * 60 + 10#$(TZ=Asia/Kolkata date -d "@$target" +%M) ))
+          if [ $nxt -ge $(( END_HOUR_IST * 60 )) ] || [ $nxt -lt $(( START_HOUR_IST * 60 )) ]; then
+            echo "Next slot is outside active hours: stopping for the night. Restarts at $START_HOUR_IST:00 AM IST."
+            echo "STOP=true" >> "$GITHUB_ENV"; exit 0
+          fi
+          echo "This run started at $(TZ=Asia/Kolkata date -d "$started" '+%I:%M %p IST')."
+          echo "Next run at about $(TZ=Asia/Kolkata date -d "@$(( $(date +%s) + wait ))" '+%I:%M %p IST') (sleeping $((wait / 60)) min)."
           sleep $wait
 
-      - name: Start the next run (unless one is already waiting)
+      - name: Start the next run
+        if: env.STOP != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          waiting=$(gh run list --workflow hourly-job-alert.yml --limit 20 --json status,databaseId \
-            --jq "[.[] | select(.databaseId != ${{ github.run_id }}) | select(.status==\"queued\" or .status==\"waiting\" or .status==\"pending\" or .status==\"requested\" or .status==\"in_progress\")] | length")
-          if [ "$waiting" -gt 0 ]; then
-            echo "Another run is already queued/running: not starting a duplicate."
-          else
-            gh workflow run hourly-job-alert.yml --ref "${{ github.ref_name }}"
-            echo "Next run started."
-          fi
+          gh workflow run hourly-job-alert.yml --ref "${{ github.ref_name }}" -f chained=true
+          echo "Next run started."
