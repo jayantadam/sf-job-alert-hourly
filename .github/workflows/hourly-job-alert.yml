@@ -1,11 +1,15 @@
-name: Hourly Salesforce Job Alert
 
 on:
   schedule:
     # Every 30 minutes, 24x7 (at :17 and :47 past each hour; free & unlimited on a PUBLIC repo).
     # Do NOT use this on a private repo (it would need ~8,600 min/month; free limit is 2,000).
     - cron: "17,47 * * * *"
-  workflow_dispatch: {}          # "Run workflow" button for manual tests
+  workflow_dispatch: {}          # "Run workflow" button; also used by the self-restart below
+
+# Allows the workflow to start its own next run (self-restart every 30 min)
+permissions:
+  contents: read
+  actions: write
 
 # never let two runs overlap (prevents double emails to recruiters)
 concurrency:
@@ -85,3 +89,41 @@ jobs:
             state.json
             first_seen.json
           key: job-state-${{ github.run_id }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # SELF-RESTART: GitHub's own cron is often late or skipped (especially on new repos).
+  # After each run, wait until the next :17 / :47 slot, then start the next run.
+  # Just click "Run workflow" ONCE and it keeps going by itself, forever (free on a public repo).
+  # The cron schedule above stays as a backup that restarts the chain if it ever breaks.
+  # ─────────────────────────────────────────────────────────────────────────────
+  next-run:
+    needs: alert
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Wait for the next 30-minute slot
+        run: |
+          now=$(date +%s)
+          m=$(date +%-M); s=$(date +%-S)
+          # seconds until the next :17 or :47
+          for slot in 17 47 77; do
+            wait=$(( (slot - m) * 60 - s ))
+            [ $wait -ge 300 ] && break      # at least 5 min away
+          done
+          echo "Sleeping $((wait / 60)) min until the next slot"
+          sleep $wait
+
+      - name: Start the next run (unless one is already waiting)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          waiting=$(gh run list --workflow hourly-job-alert.yml --limit 20 --json status,databaseId \
+            --jq "[.[] | select(.databaseId != ${{ github.run_id }}) | select(.status==\"queued\" or .status==\"waiting\" or .status==\"pending\" or .status==\"requested\" or .status==\"in_progress\")] | length")
+          if [ "$waiting" -gt 0 ]; then
+            echo "Another run is already queued/running: not starting a duplicate."
+          else
+            gh workflow run hourly-job-alert.yml --ref "${{ github.ref_name }}"
+            echo "Next run started."
+          fi
