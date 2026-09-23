@@ -1,0 +1,41 @@
+name: Keep Job Alert Alive
+
+# GitHub pauses scheduled workflows in PUBLIC repos after 60 days without repo activity.
+# This runs on the 1st of every month and resets that 60-day timer, so the job alert never stops.
+# Free: takes about 10 seconds per month.
+
+on:
+  schedule:
+    - cron: "0 4 1 * *"          # 1st of every month, 9:30 AM IST
+  workflow_dispatch: {}          # "Run workflow" button to test it
+
+permissions:
+  contents: write                # needed to make the tiny monthly commit
+  actions: write                 # needed to re-enable the job alert workflow
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1) Make sure every workflow in this repo stays enabled (resets GitHub's 60-day timer)
+      - name: Re-enable workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for wf in hourly-job-alert.yml keepalive.yml; do
+            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/$wf/enable" \
+              && echo "Enabled $wf" || echo "Could not enable $wf (check the file name)"
+          done
+
+      # 2) Tiny commit = repository activity (a second safety net)
+      - name: Monthly keepalive commit
+        run: |
+          date -u +"Last keepalive: %Y-%m-%d %H:%M UTC" > .github/keepalive.txt
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive.txt
+          git commit -m "Monthly keepalive [skip ci]" || echo "Nothing to commit"
+          git push || echo "Push failed: set Settings > Actions > General > Workflow permissions to 'Read and write'"
