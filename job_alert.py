@@ -382,7 +382,11 @@ def main():
             mark_run_ok()
         return
 
-    applied_today = auto_apply(results, dry)
+    try:
+        applied_today = auto_apply(results, dry)
+    except Exception as e:
+        print(f"Auto-apply skipped because of an error: {e.__class__.__name__}: {e}")
+        applied_today = []
     html = build_html(results, applied_today)
     csv_path = write_csv(results)
     open(os.path.join(os.path.dirname(SEEN_FILE), "digest.html"), "w", encoding="utf-8").write(html)
@@ -588,26 +592,45 @@ def load_profile():
 
 
 def find_resume(profile):
-    b64 = os.getenv("RESUME_BASE64", "").strip()
+    """1) a resume file uploaded in the repo's resume/ folder, 2) the RESUME_BASE64 secret."""
+    path = _find_resume_file(profile)
+    if path:
+        print(f"Resume: using {os.path.basename(path)} from the resume/ folder")
+        return path
+    b64 = "".join(os.getenv("RESUME_BASE64", "").split())       # tolerate spaces / line breaks
     if b64:
         import base64, tempfile
-        name = profile.get("resume_file") or "resume.pdf"
-        path = os.path.join(tempfile.gettempdir(), name)
+        name = os.path.basename((profile.get("resume_file") or "").replace("\\", "/")) or "resume.pdf"
+        if not name.lower().endswith((".pdf", ".docx")):
+            name = "resume.pdf"
+        try:
+            data = base64.b64decode(b64 + "=" * (-len(b64) % 4))
+        except Exception as e:
+            print(f"RESUME_BASE64 secret is not valid Base64 ({e.__class__.__name__}) — auto-apply skipped.")
+            return None
+        if len(data) < 1000:
+            print("RESUME_BASE64 secret looks too small to be a resume — auto-apply skipped.")
+            return None
+        folder = os.path.join(tempfile.gettempdir(), "resume_secret")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, name)
         with open(path, "wb") as f:
-            f.write(base64.b64decode(b64))
+            f.write(data)
+        print("Resume: using the RESUME_BASE64 secret")
         return path
-    return _find_resume_file(profile)
+    return None
 
 
 def _find_resume_file(profile):
-    f = profile.get("resume_file", "")
+    f = os.path.basename((profile.get("resume_file") or "").replace("\\", "/"))
     path = os.path.join(RESUME_DIR, f) if f else ""
-    if path and os.path.exists(path):
+    if path and os.path.exists(path) and os.path.getsize(path) > 1000:
         return path
     if os.path.isdir(RESUME_DIR):
         for n in sorted(os.listdir(RESUME_DIR)):
-            if n.lower().endswith((".pdf", ".docx")):
-                return os.path.join(RESUME_DIR, n)
+            full = os.path.join(RESUME_DIR, n)
+            if n.lower().endswith((".pdf", ".docx")) and os.path.getsize(full) > 1000:
+                return full
     return None
 
 
