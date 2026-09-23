@@ -1,0 +1,104 @@
+JAYENDRA ADAM
+Senior Salesforce Developer | Salesforce Certified Platform Developer I & II | 6+ Years
++91 9130603440 • adamjays96@gmail.com • Pune, Maharashtra, India •
+https://www.linkedin.com/in/jayendra-adam-663b263b0/
+
+CERTIFICATIONS
+• Salesforce Certified Platform Developer I (PD I) — 2025
+• Salesforce Certified Platform Developer II (PD II) — 2026
+
+PROFESSIONAL SUMMARY
+Senior Salesforce Developer with 6+ years delivering enterprise Salesforce solutions end to end — requirement
+analysis, solution & data-model design, Apex and LWC/Aura development, integrations, deployments and
+post-production support (8+ years in IT including 2 years of Angular and QA Testing). Currently the senior
+Salesforce Developer & Admin for a client at Capgemini, Pune: advanced asynchronous Apex, complex
+Lightning component architecture with Jest testing, MuleSoft & REST integrations, declarative automation, and
+release management with Copado/GitLab CI-CD. I can deliver high-quality solutions, contribute hands-on to
+development and architecture, and mentor team members while supporting overall project success.
+
+TECHNICAL SKILLS
+• Salesforce Development: Apex, Apex Triggers, Batch Apex, Queueable Apex, Future Methods, Scheduled
+Apex, Dynamic Apex, Lightning Web Components (LWC), Aura Components, Visualforce, SLDS, Apex
+Sharing, Test Classes, Jest, Large Data Volumes (LDV)
+• Design & Architecture: Solution & Data Model Design, Trigger Frameworks & Service Layer Patterns, Code
+Reviews, Mentoring Junior Developers, Performance Tuning, Reusable Component Architecture
+• Automation & Security: Flow Builder, Process Builder, Workflow Rules, Approval Processes, Validation
+Rules, Assignment & Escalation Rules, Profiles, Permission Sets, Role Hierarchy, Sharing Rules, OWD,
+Field-Level Security, MFA
+• Integration — Outbound (Salesforce  External Systems): Apex Callouts (HTTP/REST/SOAP), Named
+Credentials, Remote Site Settings, OAuth 2.0 authentication, consuming external APIs from MuleSoft, Spring
+Boot & AWS-hosted services, rendering responses in LWC
+• Integration — Inbound (External Systems  Salesforce): Apex Web Services (custom REST resources
+— @HttpPost, @HttpGet, @HttpPut, @HttpDelete), Standard SOAP & REST APIs, Bulk API, Platform
+Events & Change Data Capture for event-driven integration
+• Clouds & Platform: Sales Cloud, Service Cloud, Web-to-Lead, Email-to-Lead, Lightning App Builder,
+Reports & Dashboards
+• DevOps & Deployment: Copado, Change Sets, Git, GitHub, GitLab CI/CD, Sandbox & Release
+Management, SFDX, Visual Studio Code, Workbench
+• Data, Tools & Domain: SOQL, SOSL, Data Loader, Data Import Wizard, Data Migration & Quality, JIRA,
+ServiceNow, Agile/Scrum, JavaScript, HTML, CSS, SQL, Angular
+
+PROFESSIONAL EXPERIENCE
+ Senior Salesforce Developer & Admin (Consultant) | Capgemini, Pune Apr 2022 – Present
+• Ownership: Own end-to-end delivery of platform enhancements for the client's Salesforce org —
+requirement analysis and solution design with business stakeholders through build, test, deployment and
+hypercare.
+• Development: Design and develop complex Apex (triggers, Batch/Queueable/Scheduled/Future) and
+scalable LWC/Aura component architecture (parent-child composition, event communication, lifecycle hooks),
+cutting overall development effort by up to 50%.
+• Code Quality: Drive code reviews and Apex/LWC best practices across the team and mentor junior
+developers; achieve 95%+ code coverage with comprehensive Apex test classes and Jest unit tests; apply
+trigger framework and service-layer patterns for maintainable code.
+• Integration: Design and build secure REST/SOAP integrations between Salesforce and multiple external
+platforms (MuleSoft, Spring Boot, AWS services) using Apex callouts and Named Credentials.
+• Innovation: Built a custom Field-Level Security Validation Tool in Apex automating object- and field-level
+security audits — eliminated paid-tool dependency, saving the client ~$40,000 annually.
+• Administration: Serve as primary Admin + Developer for 100+ users: permission sets, role hierarchy,
+sharing rules, OWD; improved data quality via clean-ups, field updates and object-model optimization;
+enabled MFA org-wide.
+• Automation: Delivered automation with Flows, Process Builder and Apex Triggers reducing operational
+effort by 40%; built custom apps, objects and dynamic Lightning pages via Lightning App Builder.
+• Release Management: Manage end-to-end deployments across sandboxes and production (Change Sets,
+version tracking); active contributor in Agile ceremonies — sprint planning, backlog grooming, reviews.
+
+Senior Software Developer — Salesforce Developer & Admin | NeoSOFT
+Technologies Mar 2020 – Mar 2022
+• Lightning Development: Designed and developed LWC and Aura components improving UI
+responsiveness and reducing page load times by 30%; migrated applications from Salesforce Classic to
+Lightning Experience, improving user adoption.
+• Apex & Asynchronous: Built and optimized Apex classes, triggers, batch jobs and test classes (90–95%
+coverage); designed asynchronous solutions (Batch, Queueable, Future) for large data volumes.
+• Automation: Implemented Flows, Process Builder, Workflow Rules and Approval Processes, cutting
+operational effort by 40%; developed custom Visualforce pages with automated PDF generation, reducing
+document preparation from hours to minutes.
+• Data Migration: Executed data migration projects using Data Loader and Import Wizard, ensuring integrity of
+30,000+ records.
+
+
+ Software Developer — Angular | NeoSOFT Mar 2018 – Mar 2020
+• Front-End Development: Developed Angular applications with reusable components and services; built
+secure, optimized RESTful API integrations; improved load times 30% using RxJS and lazy loading.
+
+
+KEY PROJECTS
+• Salesforce–MuleSoft Integration Layer — Reusable Apex callout framework integrating Salesforce
+with MuleSoft, Spring Boot and AWS-hosted services — secure, error-handled integrations surfaced
+in LWC dashboards.
+• Metadata-Driven Trigger Framework with Service Layer — One trigger per object dispatching to handler
+classes, controlled by Custom Metadata for per-event enable/disable and user bypass — standardized
+development with 95%+ test coverage.
+• Outbound REST API Integration with Resilient Error Handling — Apex callouts consuming external
+REST APIs via Named Credentials (OAuth 2.0): Queueable chaining, automatic retry with error logging,
+results surfaced in an LWC dashboard.
+• Event-Driven Integration using Platform Events & CDC — Publish-subscribe integration: Platform Events
+consumed by Apex subscribers for near real-time updates; CDC on key objects with live LWC updates via
+Lightning Message Service.
+• Lightning Modernization Demo App (LWC & Lightning Data Service) — Rebuilt a classic-style record
+page as a Lightning Experience page: custom LWCs with wire adapters (getRecord), lightning-record-form,
+Lightning App Builder with conditional visibility and org-default activation.
+• Enterprise Data Migration Program — End-to-end migration of 30,000+ records (Data Loader, Import
+Wizard) — field mapping, deduplication, validation rules and integrity sign-off.
+EDUCATION
+ Bachelor of Computer Applications (BCA) — Solapur University, Maharashtra 2014 – 2017
+LANGUAGES
+English (Professional) • Hindi (Native) • Marathi (Native)

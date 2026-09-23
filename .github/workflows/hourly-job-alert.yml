@@ -1,0 +1,87 @@
+name: Hourly Salesforce Job Alert
+
+on:
+  schedule:
+    # Every hour, 24x7 (free & unlimited on a PUBLIC repo).
+    # Private repo? Use "17 3-17 * * *" (8:47 AM to 10:47 PM IST) to stay inside 2,000 free min/month.
+    - cron: "17 * * * *"
+  workflow_dispatch: {}          # "Run workflow" button for manual tests
+
+# never let two runs overlap (prevents double emails to recruiters)
+concurrency:
+  group: hourly-job-alert
+  cancel-in-progress: false
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # cache the Chromium download so each run is ~1 min faster
+      - name: Cache Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
+      - name: Install browser for Naukri
+        run: python -m playwright install --with-deps chromium
+
+      # Memory of jobs already emailed / applied. Kept in the private Actions cache
+      # (not committed), so it stays hidden even if the repo is public.
+      - name: Restore job history
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            seen_jobs.json
+            applied_jobs.json
+            state.json
+            first_seen.json
+          key: job-state-${{ github.run_id }}
+          restore-keys: job-state-
+
+      - name: Search jobs, email recruiters, send alert
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          # Public repo: keep your profile & resume in Secrets (NOT as files in the repo)
+          PROFILE_JSON: ${{ secrets.PROFILE_JSON }}
+          RESUME_BASE64: ${{ secrets.RESUME_BASE64 }}
+          TZ: Asia/Kolkata             # show times in IST
+          TO_EMAIL: ${{ secrets.TO_EMAIL }}       # hidden (public repo); falls back to GMAIL_USER
+          QUIET_LOGS: "true"                        # don't print company/recruiter names in public logs
+          MIN_EXP: "4"
+          MAX_EXP: "8"
+          WINDOW_HOURS: "1"            # only jobs posted in the last 1 hour
+          MAX_WINDOW_HOURS: "1.25"     # small stretch only when GitHub starts a run late (no gaps, no old jobs)
+          SEND_IF_EMPTY: "false"       # no email when nothing was posted in the last hour
+          USE_LINKEDIN: "true"
+          USE_NAUKRI: "true"
+          # extra portals (remove any you don't want)
+          # all extra portals (TimesJobs & Instahyre: a job is "new" the first hour it appears)
+          OTHER_SOURCES: "Foundit,Shine,Cutshort,Talent.com,TimesJobs,Instahyre"
+          # ---- auto-apply by emailing recruiters ----
+          AUTO_APPLY: "true"           # email recruiters your resume (needs PROFILE_JSON + RESUME_BASE64 secrets)
+          MAX_AUTO_APPLY_PER_RUN: "5"
+          MAX_AUTO_APPLY_PER_DAY: "15"
+        run: python job_alert.py
+
+      - name: Save job history
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            seen_jobs.json
+            applied_jobs.json
+            state.json
+            first_seen.json
+          key: job-state-${{ github.run_id }}

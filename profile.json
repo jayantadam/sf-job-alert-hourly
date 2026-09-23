@@ -1,0 +1,19 @@
+{
+  "name": "Jayendra Digambar Adam",
+  "email": "adamjays96@gmail.com",
+  "phone": "+91-9130603440",
+  "linkedin": "https://www.linkedin.com/in/jayendra-adam-663b263b0",
+  "total_experience": "6",
+  "current_role": "Senior Salesforce Developer at Capgemini",
+  "current_location": "Pune",
+  "notice_period": "60 days",
+  "current_ctc": "18,55,000",
+  "expected_ctc": "2200000",
+  "certifications": "Salesforce Platform Developer I, Platform Developer II",
+  "skills": ["Apex", "LWC", "Aura", "SOQL", "Flows", "REST", "SOAP", "Sales Cloud", "Service Cloud", "Experience Cloud", "CPQ", "CI/CD", "Git", "Triggers", "Batch Apex", "Integration"],
+  "highlight": "I designed and delivered scalable Salesforce solutions using Apex, Lightning Web Components (LWC), Flows, and REST integrations, improving business process automation, system performance, and overall user experience",
+  "resume_file": "resume/resume.pdf",
+  "must_have_any_skill": ["Apex", "LWC"],
+  "skip_companies": ["Capgemini"]
+}
+
