@@ -63,7 +63,7 @@ jobs:
           me=$(gh run view ${{ github.run_id }} --json createdAt --jq .createdAt)
           cutoff=$(date -u -d "$me - $mins minutes" +%Y-%m-%dT%H:%M:%SZ)
           # chained runs only give way to other chained/manual runs (never to a backup run)
-          if [ "$EVENT" = "schedule" ]; then ev='.'; else ev='select(.event != \"schedule\")'; fi
+          if [ "$EVENT" = "schedule" ]; then ev='.'; else ev='select(.event != "schedule")'; fi
           recent=$(gh run list --workflow hourly-job-alert.yml --limit 30 --json databaseId,conclusion,createdAt,event \
             --jq "[.[] | select(.databaseId != ${{ github.run_id }}) | $ev | select(.conclusion != \"cancelled\" and .conclusion != \"skipped\") | select(.createdAt > \"$cutoff\" and .createdAt < \"$me\")] | length")
           if [ "$recent" -gt 0 ]; then
