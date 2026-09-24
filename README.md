@@ -156,6 +156,7 @@ GitHub doesn't run scheduled jobs at the exact minute. A 5–20 minute delay is 
 | `MAX_WINDOW_HOURS` | 1.25 | Small stretch if GitHub starts a run late, so no job falls in a gap |
 | `SEND_IF_EMPTY` | false | `false` = no email when nothing was posted in the last hour |
 | `USE_LINKEDIN` / `USE_NAUKRI` | true | Turn a source on/off |
+| `STRICT_EVERY_MIN` | 0 | Search LinkedIn + Naukri only every N minutes (every other run) to avoid blocks. `0` = every run |
 | `OTHER_SOURCES` | Foundit,Shine,Cutshort,Talent.com,TimesJobs,Instahyre | Extra portals (remove any you don't want) |
 | `AUTO_APPLY` | true | Email recruiters your resume |
 | `MAX_AUTO_APPLY_PER_RUN` | 5 | Max recruiter emails per hourly run |

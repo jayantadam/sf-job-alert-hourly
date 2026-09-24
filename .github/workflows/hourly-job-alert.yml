@@ -3,11 +3,11 @@ name: Hourly Salesforce Job Alert
 on:
   schedule:
     # Cron times are UTC (IST = UTC + 5:30).
-    # 02:30 UTC = 8:00 AM IST → starts the day's 30-minute chain.
+    # 02:30 UTC = 8:00 AM IST → starts the day's 20-minute chain.
     - cron: "30 2 * * *"
-    # BACKUP every 30 min from 8:30 AM to 11:00 PM IST: restarts the chain if it ever stops
+    # BACKUP every 20 min from 8:30 AM to 11:10 PM IST: restarts the chain if it ever stops
     # (skips itself while the chain is running). Nothing runs overnight.
-    - cron: "0,30 3-17 * * *"
+    - cron: "0,20,40 3-17 * * *"
   workflow_dispatch:             # "Run workflow" button; also used by the self-restart below
     inputs:
       chained:
@@ -21,18 +21,18 @@ env:
   START_HOUR_IST: "8"      # first run  8:00 AM IST
   END_HOUR_IST: "23"       # last run starts before 11:00 PM IST
 
-# Allows the workflow to start its own next run (self-restart every 30 min)
+# Allows the workflow to start its own next run (self-restart every 20 min)
 permissions:
   contents: read
   actions: write
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────
-  # GUARD: keeps exactly ONE 30-minute chain alive.
+  # GUARD: keeps exactly ONE 20-minute chain alive.
   #  • Manual "Run workflow" click → always runs.
-  #  • Chained run (started by the previous run) → stops if a newer chain already ran < 15 min ago
+  #  • Chained run (started by the previous run) → stops if a newer chain already ran < 10 min ago
   #    (this kills duplicate chains, which caused the "next run after 6 minutes" problem).
-  #  • Backup cron → runs ONLY if the chain has died (no run in the last 35 min).
+  #  • Backup cron → runs ONLY if the chain has died (no run in the last 25 min).
   #  • Outside active hours (default 8 AM–11 PM IST) → scheduled/chained runs cancel themselves.
   # Skipped runs cancel themselves, so they show as grey "cancelled". That's normal.
   # ─────────────────────────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ jobs:
             gh run cancel ${{ github.run_id }}
             sleep 60; exit 0
           fi
-          if [ "$EVENT" = "schedule" ]; then mins=35; else mins=15; fi
+          if [ "$EVENT" = "schedule" ]; then mins=25; else mins=10; fi
           me=$(gh run view ${{ github.run_id }} --json createdAt --jq .createdAt)
           cutoff=$(date -u -d "$me - $mins minutes" +%Y-%m-%dT%H:%M:%SZ)
           # chained runs only give way to other chained/manual runs (never to a backup run)
@@ -129,13 +129,16 @@ jobs:
           QUIET_LOGS: "true"                        # don't print company/recruiter names in public logs
           MIN_EXP: "4"
           MAX_EXP: "8"
-          WINDOW_HOURS: "0.5"          # jobs posted since the previous run (about 30 minutes)
-          # Normally each run looks back ~30 min (to the previous run). The first run of the morning
+          WINDOW_HOURS: "0.34"         # jobs posted since the previous run (about 20 minutes)
+          # Normally each run looks back ~20 min (to the previous run). The first run of the morning
           # looks back to last night's final run, so jobs posted overnight are NOT missed.
           MAX_WINDOW_HOURS: "10"
           SEND_IF_EMPTY: "false"       # no email when nothing new was posted
           USE_LINKEDIN: "true"
           USE_NAUKRI: "true"
+          # LinkedIn + Naukri are searched on EVERY run (every 20 min).
+          # If they start blocking (0 listings / 429 in the log), set "40" = every other run.
+          STRICT_EVERY_MIN: "0"
           # all extra portals (TimesJobs & Instahyre: a job is "new" the first hour it appears)
           OTHER_SOURCES: "Foundit,Shine,Cutshort,Talent.com,TimesJobs,Instahyre"
           # ---- auto-apply by emailing recruiters ----
@@ -156,7 +159,7 @@ jobs:
           key: job-state-${{ github.run_id }}
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # SELF-RESTART: starts the next run exactly 30 minutes after this run started,
+  # SELF-RESTART: starts the next run exactly 20 minutes after this run started,
   # until 11 PM IST. Then it stops for the night; the 8 AM cron starts it again next morning.
   # The cron schedule above is only a backup that restarts the chain if it ever breaks.
   # ─────────────────────────────────────────────────────────────────────────────
@@ -164,13 +167,13 @@ jobs:
     needs: [guard, alert]
     if: always() && needs.guard.outputs.go == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
     steps:
-      - name: Wait until 30 minutes after this run started
+      - name: Wait until 20 minutes after this run started
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          INTERVAL_MIN: "30"
+          INTERVAL_MIN: "20"
         run: |
           started=$(gh run view ${{ github.run_id }} --json createdAt --jq .createdAt)
           target=$(( $(date -d "$started" +%s) + INTERVAL_MIN * 60 ))

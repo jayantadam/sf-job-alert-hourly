@@ -7,9 +7,8 @@ If Naukri blocks the run, this returns [] and the LinkedIn part still works.
 import re, time, datetime as dt
 from html import unescape
 
-NAUKRI_KEYWORDS = ["salesforce developer", "senior salesforce developer", "apex developer",
-                   "lwc developer", "salesforce technical lead", "sfdc developer",
-                   "salesforce cpq developer", "salesforce lightning developer"]
+# 4 broad searches (Naukri's "salesforce" search also returns senior / lead / CPQ / LWC roles)
+NAUKRI_KEYWORDS = ["salesforce developer", "salesforce", "sfdc", "apex developer", "salesforce administrator"]
 NAUKRI_CITIES = {"Pune": "pune", "Hyderabad": "hyderabad"}
 
 
@@ -83,7 +82,7 @@ def fetch_naukri(job_age_days=1, pages=2, log=print):
                 for kw in NAUKRI_KEYWORDS:
                     for pg in range(1, pages + 1):
                         suffix = "" if pg == 1 else f"-{pg}"
-                        url = f"https://www.naukri.com/{_slug(kw)}-jobs-in-{cslug}{suffix}?jobAge={job_age_days}"
+                        url = f"https://www.naukri.com/{_slug(kw)}-jobs-in-{cslug}{suffix}?jobAge={job_age_days}&sort=f"   # sort=f: newest first
                         captured.clear()
                         try:
                             page.goto(url, wait_until="domcontentloaded", timeout=45000)

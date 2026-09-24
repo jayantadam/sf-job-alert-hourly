@@ -26,6 +26,9 @@ S = requests.Session()
 S.headers.update({"User-Agent": UA, "Accept-Language": "en-IN,en;q=0.9"})
 
 CITIES = ["Pune", "Hyderabad"]
+# set by job_alert.py before fetching (to cut traffic):
+SINCE_MS = 0      # results older than this (ms) are outside the search window → stop paging
+KNOWN = {}        # {"Instahyre": {"in-123", ...}} jobs already seen → don't re-open their pages
 KEYWORDS = ["salesforce developer", "salesforce", "apex lwc"]
 CITY_RX = {c: re.compile(c if c != "Hyderabad" else r"hyderabad|secunderabad", re.I) for c in CITIES}
 
@@ -63,7 +66,7 @@ def _num(x):
 def fetch_foundit(log=print):
     out = {}
     for city in CITIES:
-        for kw in ["salesforce developer", "salesforce"]:
+        for kw in ["salesforce"]:                       # broad search covers "salesforce developer" too
             for start in (0, 15, 30):
                 url = ("https://www.foundit.in/middleware/jobsearch?sort=1&limit=15"
                        f"&start={start}&query={requests.utils.quote(kw).replace('%20', '%2B')}"
@@ -93,8 +96,9 @@ def fetch_foundit(log=print):
                         jb["linkedin_id"] = re.search(r"view/(\d+)", apply).group(1)
                     out[jb["id"]] = jb
                 time.sleep(1.2)
-                if len(data) < 15:
-                    break
+                oldest = min([j.get("createdAt") or 0 for j in data] or [0])
+                if len(data) < 15 or (SINCE_MS and oldest and oldest < SINCE_MS):
+                    break                                # newest-first: the rest is older than the window
     log(f"Foundit: {len(out)} raw listings")
     return list(out.values())
 
@@ -188,7 +192,7 @@ def fetch_shine(log=print):
 
 
 # ───────────────────────────── Instahyre ─────────────────────────────
-def fetch_instahyre(log=print, max_detail=25):
+def fetch_instahyre(log=print, max_detail=10):
     """Instahyre's search API has no dates, so we open each Pune/Hyderabad job page
     (newest IDs first) and read datePosted from its JSON-LD."""
     cands = {}
@@ -205,10 +209,23 @@ def fetch_instahyre(log=print, max_detail=25):
                 cands[o["id"]] = (o, cs)
         time.sleep(1)
     out = []
-    for jid in sorted(cands, reverse=True)[:max_detail]:     # newest first
+    known = KNOWN.get("Instahyre")
+    opened = 0
+    for jid in sorted(cands, reverse=True):     # newest first
         o, cs = cands[jid]
         url = o.get("public_url") or f"https://www.instahyre.com/job-{jid}/"
         posted, text = "", " ".join(o.get("keywords") or [])
+        if known is not None and f"in-{jid}" in known:
+            # already seen on an earlier run: no need to open its page again
+            for c in cs:
+                jb = _job("Instahyre", jid, c, o.get("title", ""), (o.get("employer") or {}).get("company_name", ""),
+                          o.get("locations", c), 0, None, None, "", "Not disclosed", text, url)
+                jb["date_only"] = True
+                out.append(jb)
+            continue
+        if opened >= max_detail:
+            continue
+        opened += 1
         try:
             html = S.get(url, timeout=25).text
             for m in re.finditer(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', html, re.S):

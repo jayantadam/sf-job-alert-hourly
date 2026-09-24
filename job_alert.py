@@ -45,29 +45,58 @@ def compute_window():
     return round(min(MAX_WINDOW_HOURS, max(WINDOW_HOURS, since)), 2)
 
 
+# LinkedIn + Naukri are strict about automated traffic: search them only every STRICT_EVERY_MIN minutes
+# (e.g. 40 = every other 20-minute run). Each strict search looks back to the previous strict search,
+# so no jobs are missed. 0 = search them on every run.
+STRICT_EVERY_MIN = float(os.getenv("STRICT_EVERY_MIN", "0"))
+STRICT_RAN = False
+
+
+def _state():
+    try:
+        return json.load(open(STATE_FILE))
+    except Exception:
+        return {}
+
+
+def strict_plan():
+    """Return (run_strict_now, strict_window_hours)."""
+    last = _state().get("strict_last_run", 0) or _state().get("last_run", 0)
+    if not last:
+        return True, WINDOW_HOURS
+    mins = (time.time() - last) / 60
+    if STRICT_EVERY_MIN and mins < STRICT_EVERY_MIN * 0.8:
+        return False, 0
+    return True, round(min(MAX_WINDOW_HOURS, max(WINDOW_HOURS, mins / 60 + 0.05)), 2)
+
+
 def mark_run_ok():
-    json.dump({"last_run": time.time(), "last_run_ist": dt.datetime.now().strftime("%Y-%m-%d %H:%M")},
-              open(STATE_FILE, "w"))
+    st = _state()
+    st.update({"last_run": time.time(), "last_run_ist": dt.datetime.now().strftime("%Y-%m-%d %H:%M")})
+    if STRICT_RAN:
+        st["strict_last_run"] = st["last_run"]
+    json.dump(st, open(STATE_FILE, "w"))
 
 LOCATIONS = {"Pune": "Pune, Maharashtra, India", "Hyderabad": "Hyderabad, Telangana, India"}
-KEYWORDS = ["Salesforce Developer", "Senior Salesforce Developer", "Apex Developer",
-            "LWC Developer", "Salesforce Technical Lead", "SFDC Developer",
-            "Salesforce Consultant", "Salesforce CPQ Developer", "Salesforce MuleSoft"]
+# 5 broad searches (LinkedIn matches the whole job text, so "Salesforce" also finds
+# Senior Developer / Tech Lead / Consultant / CPQ roles; titles are filtered below).
+KEYWORDS = ["Salesforce Developer", "Salesforce", "Apex LWC", "SFDC", "MuleSoft",
+            '"Salesforce Administrator" OR "Sales Cloud" OR "Financial Services Cloud"']   # 1 search covers all 3 roles
 
 # title must match one of these ...
-TITLE_OK = re.compile(r"salesforce|sfdc|apex|lwc|lightning|cpq|mulesoft|agentforce|vlocity|omnistudio|force\.com", re.I)
+TITLE_OK = re.compile(r"salesforce|sfdc|apex|lwc|lightning|cpq|mulesoft|agentforce|vlocity|omnistudio|force\.com|sales cloud|service cloud|financial services cloud|\bFSC\b", re.I)
 # ... and not these
-TITLE_BAD = re.compile(r"architect|admin|administrator|business analyst|\bBA\b|sales (executive|manager|officer)|"
+TITLE_BAD = re.compile(r"\barchitects?\b|business analyst|\bBA\b|sales (executive|manager|officer)|"
                        r"account (executive|manager)|marketing cloud|tester|\bQA\b|payroll|accountant|recruit|"
-                       r"intern|fresher|director|oracle apex|\bSAP\b|oracle cpq|dynamics|servicenow|zoho|veeva", re.I)
+                       r"\binterns?(hip)?\b|fresher|director|\boracle\b|\bSAP\b|dynamics|servicenow|zoho|veeva", re.I)
 # description must look like a Salesforce dev job
 DESC_OK = re.compile(r"\bapex\b|\blwc\b|lightning web component|salesforce", re.I)
 # staffing-agency / spam signals
 AGENCY = re.compile(r"consultan(cy|ts)\b|staffing|recruit|hiring solutions|placement|manpower|talent|peoplefy|fittment|job ?fit|headhunt|executive search|\bsearch\b|career|jobs\b|hr solutions|"
                     r"\bHR\b|codersbrain|fusion plus|people staffing", re.I)
 
-SKILLS = ["Apex", "LWC", "Aura", "Visualforce", "SOQL", "Flows", "REST", "SOAP", "MuleSoft", "Sales Cloud",
-          "Service Cloud", "Experience Cloud", "CPQ", "Revenue Cloud", "Field Service", "Agentforce", "Data Cloud",
+SKILLS = ["Admin", "Permission Sets", "Validation Rules", "Reports", "Dashboards", "Apex", "LWC", "Aura", "Visualforce", "SOQL", "Flows", "REST", "SOAP", "MuleSoft", "Sales Cloud",
+          "Service Cloud", "Experience Cloud", "CPQ", "Revenue Cloud", "Financial Services Cloud", "Field Service", "Agentforce", "Data Cloud",
           "OmniStudio", "Vlocity", "Health Cloud", "Financial Services Cloud", "Copado", "Gearset", "SFDX",
           "CI/CD", "Git", "JavaScript", "Triggers", "Batch Apex", "Integration"]
 SKILL_RX = {s: re.compile(r"\b" + re.escape(s).replace("Flows", "Flows?").replace("Integration", "Integrations?") + r"\b", re.I)
@@ -107,14 +136,20 @@ def ago_hours(label):
 
 
 def search(city, loc):
+    """LinkedIn guest search: 10 results per page, newest first (sortBy=DD).
+    Keeps paging until a page is short or its results are older than the search window."""
     jobs = {}
+    win = WINDOW_HOURS
+    max_pages = 3 if win <= 1.5 else 10
     for kw in KEYWORDS:
-        for start in (0, 25):
+        for pg in range(max_pages):
+            start = pg * 10
             url = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
                    f"?keywords={requests.utils.quote(kw)}&location={requests.utils.quote(loc)}"
-                   f"&f_TPR=r{int(WINDOW_HOURS * 3600)}&start={start}")
+                   f"&f_TPR=r{int(WINDOW_HOURS * 3600)}&sortBy=DD&start={start}")
             html = get(url)
             cards = BeautifulSoup(html, "html.parser").select("div.base-card")
+            too_old = False
             for c in cards:
                 jid = c.get("data-entity-urn", "").split(":")[-1]
                 t = c.select_one(".base-search-card__title")
@@ -123,13 +158,17 @@ def search(city, loc):
                 tm = c.select_one("time")
                 if not jid or not t:
                     continue
+                ago = tm.get_text(strip=True) if tm else ""
+                h = ago_hours(ago)
+                if h is not None and h > win:
+                    too_old = True
                 jobs[jid] = dict(id=jid, city=city, title=t.get_text(strip=True),
                                  company=co.get_text(strip=True) if co else "",
                                  location=lo.get_text(strip=True) if lo else city,
                                  date=tm.get("datetime", "") if tm else "",
-                                 ago=tm.get_text(strip=True) if tm else "")
+                                 ago=ago)
             time.sleep(1.2)
-            if len(cards) < 25:
+            if len(cards) < 10 or too_old:
                 break
     return jobs
 
@@ -242,23 +281,33 @@ def enrich_naukri(j):
 
 
 def main():
-    global WINDOW_HOURS
+    global WINDOW_HOURS, STRICT_RAN
     dry = "--dry-run" in sys.argv
     WINDOW_HOURS = compute_window()
+    run_strict, strict_window = strict_plan()
+    STRICT_RAN = run_strict
     print(f"Search window: last {WINDOW_HOURS:g} hours")
+    if run_strict:
+        print(f"LinkedIn + Naukri: searching this run (look-back {strict_window:g} h)")
+    else:
+        print(f"LinkedIn + Naukri: skipped this run to reduce traffic (searched every {STRICT_EVERY_MIN:g} min)")
     seen = json.load(open(SEEN_FILE)) if os.path.exists(SEEN_FILE) else {}
+    base_window = WINDOW_HOURS
 
     # ---------- LinkedIn ----------
     raw = {}
-    if os.getenv("USE_LINKEDIN", "true").lower() == "true":
+    if run_strict and os.getenv("USE_LINKEDIN", "true").lower() == "true":
+        WINDOW_HOURS = strict_window            # LinkedIn looks back to its own previous search
         for city, loc in LOCATIONS.items():
             raw.update(search(city, loc))
-    print(f"LinkedIn: {len(raw)} raw listings")
+        print(f"LinkedIn: {len(raw)} raw listings")
     for j in raw.values():
         j["source"] = "LinkedIn"
     before = len(raw)
     raw = {k: j for k, j in raw.items() if (ago_hours(j.get("ago")) is None or ago_hours(j.get("ago")) <= WINDOW_HOURS)}
-    print(f"LinkedIn: {len(raw)} of {before} posted in the last {WINDOW_HOURS:g}h")
+    if run_strict:
+        print(f"LinkedIn: {len(raw)} of {before} posted in the last {WINDOW_HOURS:g}h")
+    WINDOW_HOURS = base_window
 
     cand, keyset = [], set()
     for j in raw.values():
@@ -279,32 +328,37 @@ def main():
 
     # ---------- Naukri + other portals ----------
     cutoff_ts = (time.time() - WINDOW_HOURS * 3600) * 1000
+    strict_cutoff_ts = (time.time() - (strict_window or WINDOW_HOURS) * 3600) * 1000
     # date-only portals (TimesJobs, Instahyre) can't be filtered by hour: accept today/yesterday,
     # seen_jobs.json guarantees each job is emailed only once.
     date_cutoff = (dt.datetime.now() - dt.timedelta(hours=max(WINDOW_HOURS, 24))).strftime("%Y-%m-%d")
 
-    extra = []
-    if os.getenv("USE_NAUKRI", "true").lower() == "true":
-        try:
-            from naukri_source import fetch_naukri
-            extra += fetch_naukri(job_age_days=1, pages=1)
-        except Exception as e:
-            print(f"Naukri skipped: {e}")
-    enabled = [x.strip() for x in os.getenv("OTHER_SOURCES", "Foundit,Shine,Cutshort,Talent.com,TimesJobs,Instahyre").split(",") if x.strip()]
-    if enabled:
-        try:
-            from other_sources import fetch_all
-            extra += fetch_all(enabled)
-        except Exception as e:
-            print(f"Other portals skipped: {e}")
-
-    # Portals that publish only a date (TimesJobs, Instahyre): a job counts as "posted in the last hour"
-    # when it was NOT on the portal at the previous hourly check and is dated today.
     FIRST_SEEN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "first_seen.json")
     try:
         first_seen = json.load(open(FIRST_SEEN_FILE))
     except Exception:
         first_seen = {}
+
+    extra = []
+    if run_strict and os.getenv("USE_NAUKRI", "true").lower() == "true":
+        try:
+            from naukri_source import fetch_naukri
+            # newest-first pages; the long morning look-back reads 3 pages per search
+            extra += fetch_naukri(job_age_days=1, pages=1 if strict_window <= 1.5 else 3)
+        except Exception as e:
+            print(f"Naukri skipped: {e}")
+    enabled = [x.strip() for x in os.getenv("OTHER_SOURCES", "Foundit,Shine,Cutshort,Talent.com,TimesJobs,Instahyre").split(",") if x.strip()]
+    if enabled:
+        try:
+            import other_sources
+            other_sources.SINCE_MS = int(cutoff_ts)          # stop paging once results are older than the window
+            other_sources.KNOWN = {src: set(ids) for src, ids in first_seen.items()}   # skip re-reading known jobs
+            extra += other_sources.fetch_all(enabled)
+        except Exception as e:
+            print(f"Other portals skipped: {e}")
+
+    # Portals that publish only a date (TimesJobs, Instahyre): a job counts as "posted in the last hour"
+    # when it was NOT on the portal at the previous hourly check and is dated today.
     today = dt.date.today().isoformat()
     yday = (dt.date.today() - dt.timedelta(days=1)).isoformat()   # portals date in UTC / publish late
     fresh, seed = [], {}
@@ -318,7 +372,7 @@ def main():
                 j["ago"] = "new this hour"
                 j["date"] = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
                 fresh.append(j)
-        elif j.get("created_ts", 0) >= cutoff_ts:
+        elif j.get("created_ts", 0) >= (strict_cutoff_ts if j.get("source") == "Naukri" else cutoff_ts):
             fresh.append(j)
     for src, ids in seed.items():
         if src not in first_seen:
@@ -452,7 +506,7 @@ def manual_email_links(r):
     else:
         subj = f"Application: {r['title']} – [Your Name]"
         body = (f"Dear Hiring Team,\n\nI would like to apply for the {r['title']} role at {r['company']} ({r['city']}).\n"
-                f"I am a Salesforce Developer with [X] years of experience in "
+                f"I am a Salesforce professional with [X] years of experience in "
                 f"{', '.join(r['skills'][:6]) or 'Apex, LWC, SOQL, integrations'}.\n\n"
                 f"Notice period: [ ]\nCurrent CTC: [ ] | Expected CTC: [ ]\n\n"
                 f"Please find my resume attached.\n\nJob link: {r['url']}\n\nRegards,\n[Your Name]\n[Phone]")
@@ -642,7 +696,7 @@ def cover_email(job, p):
 
 I came across the {job['title']} opening at {job['company']} ({job['city']}) on {job.get('source', 'LinkedIn')} and would like to apply.
 
-I am a Salesforce Developer with {p['total_experience']} years of experience, currently {p.get('current_role','')}. My hands-on skills closely match this role: {skills}.
+I am a Salesforce {'professional (development & administration)' if re.search(r'admin', job['title'], re.I) else 'Developer'} with {p['total_experience']} years of experience, currently {p.get('current_role','')}. My hands-on skills closely match this role: {skills}.
 {p.get('highlight','')}
 
 Quick details:
